@@ -4,6 +4,8 @@ source = '''
 # сущ  гл  сущ
 # что/кто  делает с_чем-то
 NOUN,nomn VERB NOUN,accs
+-a-        -b- -c-  -d-
+= a.tag.number = b.tag.number
 
 # Именованная сущность
 :SNOUN
@@ -11,13 +13,15 @@ NOUN,nomn VERB NOUN,accs
 ADJF NOUN
 -a-  -b-
 # Правила выведения, разделяющие пробелы обязательны
-= a.case = b.case
-= a.number = b.number
-= a.gender = b.gender
+= a.tag.case = b.tag.case
+= a.tag.number = b.tag.number
+= a.tag.gender = b.tag.gender
 
 # Птица сидит на крыше
 # сущ  гл  предлог сущ
 NOUN,nomn VERB PREP NOUN,loct
+-a-        -b- -c-  -d-
+= a.tag.number = b.tag.number
 '''
 
 text = '''
@@ -84,27 +88,45 @@ class PPattern:
             if res is not None:
                 result.append(res)
                 usedP.add(wi)
-                nextTag = nextTag + 1
-                if nextTag >= len(self.tags):
-                    return (result, usedP)
+                if not self.checkRules(usedP, result):
+                    result.remove(res)
+                    usedP.remove(wi)
+                else:
+                    nextTag = nextTag + 1
+                    if nextTag >= len(self.tags):
+                        return (result, usedP)
             wi = getNextWord(wordList)
         return None
 
+    def checkRules(self, used, result):
+        for r in self.rules:
+            if max(r[0]) < len(result):
+                destRes = result[r[0][0]]
+                destV = destRes[1]
+                destFunc = r[1][0]
+                srcRes = result[r[0][1]]
+                srcFunc = r[2][0]
+                srcV = srcRes[1]
+                if not self.checkPropRule(destFunc,destV, srcFunc, srcV):
+                    return False
+        return True
+
     def checkPropRule(self, getFunc, getArgs, srcFunc, srcArgs, \
                       op = lambda x,y: x == y):
-        return op(destFunc(destArgs), srcFunc(srcArgs))
+        v1 = getFunc(getArgs)
+        v2 = srcFunc(srcArgs)
+        return op(v1,v2)
 
     def setProp(self, setFunc, setArgs, srcFunc, srcArgs):
         setFunc(setArgs, srcFunc(srcArgs))
-                  
-    
 
 import io
 
 def parseSource(src):
-    def parseFunc(v):
+    def parseFunc(v, names):
         dest = v.split('.')
-        dest = (eval('lambda a: a.' + dest[1]), dest[0])
+        index = names.index(dest[0])
+        dest = (eval('lambda a: a.' + '.'.join(dest[1:])), index)
         return dest
     def parseLine(s):
         nonlocal arr, last
@@ -124,9 +146,9 @@ def parseSource(src):
             last.names = s
         elif s[0] == '=': # правила
             s = [x for x in s[1:].split() if x != '']
-            dest = parseFunc(s[0])
-            src = parseFunc(s[2])
-            last.rules.append((dest, src))
+            dest = parseFunc(s[0],last.names)
+            src = parseFunc(s[2],last.names)
+            last.rules.append(((dest[1],src[1]), dest, src))
         else:
             last.tags = s.split()
         
@@ -138,7 +160,6 @@ def parseSource(src):
         parseLine(s)
         s = buf.readline()
     return arr
-
 
 def parseText(pats, text):
     def parseLine(line):
@@ -169,6 +190,10 @@ def parseText(pats, text):
         if s != '':
             parseLine(s)
         s = buf.readline()
+
+def tags(word):
+    morph = py.MorphAnalyzer()
+    return morph.parse(word)
 
 patterns = parseSource(source)
 parseText(patterns, text)
