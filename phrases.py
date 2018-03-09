@@ -48,13 +48,12 @@ class PPattern:
         self.example = ''
 
     def checkPhrase(self, words, used = set()):
-        def getNextWord():
-            nonlocal wordList
+        def getNextWord(wordList):
             if len(wordList) == 0:
                 return None
-            nextTag = wordList[0]
+            index = wordList[0]
             wordList[0:1] = []
-            return nextTag
+            return index
                 
         def checkWordTags(tags, grams):
             for t in tags:
@@ -74,18 +73,19 @@ class PPattern:
         result = []
         wordList = list(set([ x for x in range(0, len(words)) ]) - used)
         wordList.sort()
-        wi = getNextWord()
+        wi = getNextWord(wordList)
         nextTag = 0
+        usedP = set()
         while wi is not None:
             w = words[wi]
             res = checkWord(self.tags[nextTag].split(','), w)
             if res is not None:
                 result.append(res)
-                used.add(wi)
+                usedP.add(wi)
                 nextTag = nextTag + 1
                 if nextTag >= len(self.tags):
-                    return (result, used)
-            wi = getNextWord()
+                    return (result, usedP)
+            wi = getNextWord(wordList)
         return None
 
     def checkPropRule(self, getFunc, getArgs, srcFunc, srcArgs, \
@@ -115,7 +115,6 @@ def parseSource(src):
         if last is None:
             last = PPattern()
             arr.append(last)
-            #last.example = s
         if s[0] == ':': # имена
             names[s[1:]] = last
         elif s[0] == '-': # внутренние имена
@@ -147,12 +146,21 @@ def parseText(pats, text):
         while used < allSet:
             was = False
             for p in pats:
-                res = p.checkPhrase(words,used)
-                if res:
-                    (res, used) = res
-                    print('+',line, p.tags, [r[0] for r in res])
-                    was = True
-            if not was:                
+                usedP = used
+                while True:
+                    res = p.checkPhrase(words, usedP)
+                    if res:
+                        (res, newP) = res
+                        used = used.union(newP)
+                        newP = set(list(newP)[0:1])
+                        print(words,usedP,newP)
+                        usedP = newP
+                        print('+',line, p.tags, [r[0] for r in res])
+                        was = True
+                    else:
+                        break
+            
+            if not was:
                 print('-',line)
                 break
 
@@ -164,6 +172,5 @@ def parseText(pats, text):
             parseLine(s)
         s = buf.readline()
 
-#print(a.split('\n'))
 patterns = parseSource(source)
 parseText(patterns, text)
