@@ -22,6 +22,16 @@ ADJF NOUN
 NOUN,nomn VERB PREP NOUN,loct
 -a-        -b- -c-  -d-
 = a.tag.number = b.tag.number
+
+# стали есть
+VERB INFN
+
+# хомяк Коля
+NOUN Name
+-a-  -b-
+= a.tag.case = b.tag.case
+= a.tag.number = b.tag.number
+
 '''
 
 text = '''
@@ -100,7 +110,7 @@ class PPattern:
 
     def checkRules(self, used, result):
         for r in self.rules:
-            if max(r[0]) < len(result):
+            if max(r[0]) < len(result): # У нас есть достаточно данных
                 destRes = result[r[0][0]]
                 destV = destRes[1]
                 destFunc = r[1][0]
