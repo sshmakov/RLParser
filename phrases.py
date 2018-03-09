@@ -85,16 +85,11 @@ class PPattern:
             wordList[0:1] = []
             return index
                 
-        def checkWordTags(tags, grams):
-            for t in tags:
-                if t not in grams:
-                    return False
-            return True
-        
-        def checkWord(tags, word):
+        def checkWord(tags, word, prevResult):
             variants = morph.parse(word)
             for v in variants:
-                if checkWordTags(tags, v.tag.grammemes):
+                if set(tags) <= v.tag.grammemes \
+                   and self.checkRules(prevResult + [(word, v)]):
                     return (word, v)
             return None
         
@@ -108,21 +103,17 @@ class PPattern:
         usedP = set()
         while wi is not None:
             w = words[wi]
-            res = checkWord(self.tags[nextTag].split(','), w)
+            res = checkWord(self.tags[nextTag].split(','), w, result)
             if res is not None:
                 result.append(res)
                 usedP.add(wi)
-                if not self.checkRules(usedP, result):
-                    result.remove(res)
-                    usedP.remove(wi)
-                else:
-                    nextTag = nextTag + 1
-                    if nextTag >= len(self.tags):
-                        return (result, usedP)
+                nextTag = nextTag + 1
+                if nextTag >= len(self.tags):
+                    return (result, usedP)
             wi = getNextWord(wordList)
         return None
 
-    def checkRules(self, used, result):
+    def checkRules(self, result):
         for r in self.rules:
             indexes = r[0]
             func = r[1]
@@ -173,10 +164,6 @@ def parseSource(src):
         elif s[0] == '=': # правила
             expr = s[1:].strip()
             last.rules.append(parseFunc(expr, last.names))
-            #s = [x for x in s[1:].split() if x != '']
-            #dest = parseFunc(s[0],last.names)
-            #src = parseFunc(s[2],last.names)
-            #last.rules.append(((dest[1],src[1]), dest, src))
         else:
             last.tags = s.split()
         
