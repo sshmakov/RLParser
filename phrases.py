@@ -69,6 +69,7 @@ text = '''
 import pymorphy2 as py
 
 names = {}
+morph = py.MorphAnalyzer()
 
 class PPattern:
     def __init__(self):
@@ -93,7 +94,6 @@ class PPattern:
                     return (word, v)
             return None
         
-        morph = py.MorphAnalyzer()
         allResults = []
         result = []
         wordList = list(set([ x for x in range(0, len(words)) ]) - used)
