@@ -1,27 +1,30 @@
 # http://pymorphy2.readthedocs.io/en/latest/user/grammemes.html#grammeme-docs
+
+# Описания шаблонов
 source = '''
 # Вася ест кашу
 # сущ  гл  сущ
 # что/кто  делает с_чем-то
 NOUN,nomn VERB NOUN,accs
--a-        -b- -c-  -d-
-= a.tag.number = b.tag.number
+# определения внутренних имен
+-a-       -b-    -c-
+= a.tag.number == b.tag.number
 
 # Именованная сущность
 :SNOUN
 # Красивый цветок
 ADJF NOUN
 -a-  -b-
-# Правила выведения, разделяющие пробелы обязательны
-= a.tag.case = b.tag.case
-= a.tag.number = b.tag.number
-= a.tag.gender = b.tag.gender
+# Правила сооответствия шаблону
+= a.tag.case == b.tag.case
+= a.tag.number == b.tag.number
+= a.tag.gender is None or a.tag.gender == b.tag.gender
 
 # Птица сидит на крыше
 # сущ  гл  предлог сущ
 NOUN,nomn VERB PREP NOUN,loct
 -a-        -b- -c-  -d-
-= a.tag.number = b.tag.number
+= a.tag.number == b.tag.number
 
 # стали есть
 VERB INFN
@@ -29,11 +32,22 @@ VERB INFN
 # хомяк Коля
 NOUN Name
 -a-  -b-
-= a.tag.case = b.tag.case
-= a.tag.number = b.tag.number
+= a.tag.case == b.tag.case
+= a.tag.number == b.tag.number 
 
+# серп и молот
+NOUN CONJ NOUN
+-a-  -c- -b-
+= a.tag.case == b.tag.case
+
+#
+NOUN PNCT NOUN
+-a-  -c- -b-
+= a.tag.case == b.tag.case
+= c.normal_form == '-'
 '''
 
+# Текст, который будем парсить
 text = '''
 Мама мыла раму
 Вася разбил окно
@@ -110,14 +124,12 @@ class PPattern:
 
     def checkRules(self, used, result):
         for r in self.rules:
-            if max(r[0]) < len(result): # У нас есть достаточно данных
-                destRes = result[r[0][0]]
-                destV = destRes[1]
-                destFunc = r[1][0]
-                srcRes = result[r[0][1]]
-                srcFunc = r[2][0]
-                srcV = srcRes[1]
-                if not self.checkPropRule(destFunc,destV, srcFunc, srcV):
+            indexes = r[0]
+            func = r[1]
+            l = r[2]
+            if max(indexes) < len(result): # У нас есть достаточно данных
+                args = [ result[x][1] for x in indexes ]
+                if not func(*args):
                     return False
         return True
 
@@ -131,13 +143,17 @@ class PPattern:
         setFunc(setArgs, srcFunc(srcArgs))
 
 import io
+import ast
 
 def parseSource(src):
-    def parseFunc(v, names):
-        dest = v.split('.')
-        index = names.index(dest[0])
-        dest = (eval('lambda a: a.' + '.'.join(dest[1:])), index)
-        return dest
+    def parseFunc(expr, names):
+        m = ast.parse(expr)
+        # Получим список уникальных задействованных имен
+        varList = list(set([ x.id for x in ast.walk(m) if type(x) == ast.Name]))
+        # Найдем их позиции в грамматике
+        indexes = [ names.index(v) for v in varList ]
+        lam = 'lambda %s: %s' % (','.join(varList), expr)
+        return (indexes, eval(lam), lam)
     def parseLine(s):
         nonlocal arr, last
         s = s.strip()
@@ -152,13 +168,15 @@ def parseSource(src):
         if s[0] == ':': # имена
             names[s[1:]] = last
         elif s[0] == '-': # внутренние имена
-            s = [x.strip('-') for x in s.split()]
+            s = [x.strip('-') for x in s[1:].strip().split()]
             last.names = s
         elif s[0] == '=': # правила
-            s = [x for x in s[1:].split() if x != '']
-            dest = parseFunc(s[0],last.names)
-            src = parseFunc(s[2],last.names)
-            last.rules.append(((dest[1],src[1]), dest, src))
+            expr = s[1:].strip()
+            last.rules.append(parseFunc(expr, last.names))
+            #s = [x for x in s[1:].split() if x != '']
+            #dest = parseFunc(s[0],last.names)
+            #src = parseFunc(s[2],last.names)
+            #last.rules.append(((dest[1],src[1]), dest, src))
         else:
             last.tags = s.split()
         
