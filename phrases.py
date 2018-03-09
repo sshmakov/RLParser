@@ -34,6 +34,8 @@ text = '''
 Сестра Татьяна - учительница
 Я учусь в школе
 Младшие братья Миша и Вова ходят в детский сад
+
+Эти типы стали есть на нашем складе
 '''
 
 import pymorphy2 as py
@@ -143,26 +145,22 @@ def parseText(pats, text):
         words = line.split()
         allSet = set([x for x in range(len(words))])
         used = set()
-        while used < allSet:
-            was = False
-            for p in pats:
-                usedP = used
-                while True:
-                    res = p.checkPhrase(words, usedP)
-                    if res:
-                        (res, newP) = res
-                        used = used.union(newP)
-                        newP = set(list(newP)[0:1])
-                        print(words,usedP,newP)
-                        usedP = newP
-                        print('+',line, p.tags, [r[0] for r in res])
-                        was = True
-                    else:
-                        break
-            
-            if not was:
-                print('-',line)
-                break
+        was = False
+        for p in pats:
+            usedP = set()
+            while True:
+                res = p.checkPhrase(words, usedP)
+                if res:
+                    (res, newP) = res
+                    used = used.union(newP)
+                    first = list(newP)[0]
+                    usedP = set([ x for x in range(first+1)])
+                    print('+',line, p.tags, [r[0] for r in res])
+                    was = True
+                else:
+                    break
+        if not was:
+            print('-',line)
 
     buf = io.StringIO(text)
     s = buf.readline()
