@@ -1,53 +1,36 @@
 # http://pymorphy2.readthedocs.io/en/latest/user/grammemes.html#grammeme-docs
-
-# Описания шаблонов
 source = '''
 # Вася ест кашу
-# сущ  гл  сущ
+# сущ  гл  винительный
 # что/кто  делает с_чем-то
 NOUN,nomn VERB NOUN,accs
-# определения внутренних имен
--a-       -b-    -c-
-= a.tag.number == b.tag.number
+
+# Мама мыла нас
+NOUN,nomn VERB NPRO,accs
 
 # Именованная сущность
 :SNOUN
 # Красивый цветок
 ADJF NOUN
 -a-  -b-
-# Правила сооответствия шаблону
-= a.tag.case == b.tag.case
-= a.tag.number == b.tag.number
-= a.tag.gender is None or a.tag.gender == b.tag.gender
+# Правила выведения, разделяющие пробелы обязательны
+= a.case = b.case
+= a.number = b.number
+= a.gender = b.gender
 
 # Птица сидит на крыше
 # сущ  гл  предлог сущ
 NOUN,nomn VERB PREP NOUN,loct
--a-        -b- -c-  -d-
-= a.tag.number == b.tag.number
 
-# стали есть
-VERB INFN
+# начал есть
+# прошлое инфинитив
+past INFN
 
-# хомяк Коля
-NOUN Name
--a-  -b-
-= a.tag.case == b.tag.case
-= a.tag.number == b.tag.number 
-
-# серп и молот
-NOUN CONJ NOUN
--a-  -c- -b-
-= a.tag.case == b.tag.case
-
-#
-NOUN PNCT NOUN
--a-  -c- -b-
-= a.tag.case == b.tag.case
-= c.normal_form == '-'
+# Мы сказали спасибо маме
+NPRO,nomn VERB NOUN,loct
 '''
 
-# Текст, который будем парсить
+#  Положительные примеры
 text = '''
 Мама мыла раму
 Вася разбил окно
@@ -59,17 +42,28 @@ text = '''
 У нас большая семья
 Папа и брат Илья работают на заводе
 Мама ведет хозяйство
-Сестра Татьяна - учительница
 Я учусь в школе
 Младшие братья Миша и Вова ходят в детский сад
 
 Эти типы стали есть на нашем складе
+
+Мама мыла нас
+Мы сказали спасибо маме
 '''
 
-import pymorphy2 as py
+#  Отрицательные примеры
+notext = '''
+Сестра Татьяна - учительница
+Мама мыла Вася
+'''
+
+non_nouns = ['в', 'л', 'и', 'к']
+
+import pymorphy3 as py
 
 names = {}
 morph = py.MorphAnalyzer()
+
 
 class PPattern:
     def __init__(self):
@@ -78,32 +72,44 @@ class PPattern:
         self.rules = []
         self.example = ''
 
-    def checkPhrase(self, words, used = set()):
+    def checkPhrase(self, words, used=None):
+        if used is None:
+            used = set()
+
         def getNextWord(wordList):
             if len(wordList) == 0:
                 return None
             index = wordList[0]
             wordList[0:1] = []
             return index
-                
-        def checkWord(tags, word, prevResult):
+
+        def checkWordTags(tags, grams):
+            for t in tags:
+                if t not in grams:
+                    return False
+            return True
+
+        def checkWord(tags, word):
             variants = morph.parse(word)
             for v in variants:
-                if set(tags) <= v.tag.grammemes \
-                   and self.checkRules(prevResult + [(word, v)]):
+                if 'NOUN' in v.tag.grammemes and word in non_nouns:
+                    continue
+                if checkWordTags(tags, v.tag.grammemes):
                     return (word, v)
             return None
-        
+
         allResults = []
         result = []
-        wordList = list(set([ x for x in range(0, len(words)) ]) - used)
+        wordList = list(set([x for x in range(0, len(words))]) - used)
         wordList.sort()
+        # print('wordList',wordList)
         wi = getNextWord(wordList)
         nextTag = 0
         usedP = set()
         while wi is not None:
+            # print('wordList',wordList, 'wi',wi)
             w = words[wi]
-            res = checkWord(self.tags[nextTag].split(','), w, result)
+            res = checkWord(self.tags[nextTag].split(','), w)
             if res is not None:
                 result.append(res)
                 usedP.add(wi)
@@ -113,38 +119,23 @@ class PPattern:
             wi = getNextWord(wordList)
         return None
 
-    def checkRules(self, result):
-        for r in self.rules:
-            indexes = r[0]
-            func = r[1]
-            l = r[2]
-            if max(indexes) < len(result): # У нас есть достаточно данных
-                args = [ result[x][1] for x in indexes ]
-                if not func(*args):
-                    return False
-        return True
-
-    def checkPropRule(self, getFunc, getArgs, srcFunc, srcArgs, \
-                      op = lambda x,y: x == y):
-        v1 = getFunc(getArgs)
-        v2 = srcFunc(srcArgs)
-        return op(v1,v2)
+    def checkPropRule(self, getFunc, getArgs, srcFunc, srcArgs, op=lambda x, y: x == y):
+        return op(getFunc(getArgs), srcFunc(srcArgs))
 
     def setProp(self, setFunc, setArgs, srcFunc, srcArgs):
         setFunc(setArgs, srcFunc(srcArgs))
 
+
 import io
-import ast
+
 
 def parseSource(src):
-    def parseFunc(expr, names):
-        m = ast.parse(expr)
-        # Получим список уникальных задействованных имен
-        varList = list(set([ x.id for x in ast.walk(m) if type(x) == ast.Name]))
-        # Найдем их позиции в грамматике
-        indexes = [ names.index(v) for v in varList ]
-        lam = 'lambda %s: %s' % (','.join(varList), expr)
-        return (indexes, eval(lam), lam)
+    def parseFunc(v, names):
+        dest = v.split('.')
+        index = names.index(dest[0])
+        dest = (eval('lambda a: a.' + dest[1]), index)
+        return dest
+
     def parseLine(s):
         nonlocal arr, last
         s = s.strip()
@@ -156,25 +147,29 @@ def parseSource(src):
         if last is None:
             last = PPattern()
             arr.append(last)
-        if s[0] == ':': # имена
+            # last.example = s
+        if s[0] == ':':  # имена
             names[s[1:]] = last
-        elif s[0] == '-': # внутренние имена
-            s = [x.strip('-') for x in s[1:].strip().split()]
+        elif s[0] == '-':  # внутренние имена
+            s = [x.strip('-') for x in s.split()]
             last.names = s
-        elif s[0] == '=': # правила
-            expr = s[1:].strip()
-            last.rules.append(parseFunc(expr, last.names))
+        elif s[0] == '=':  # правила
+            s = [x for x in s[1:].split() if x != '']
+            dest = parseFunc(s[0], last.names)
+            src = parseFunc(s[2], last.names)
+            last.rules.append(((dest[1], src[1]), dest, src))
         else:
             last.tags = s.split()
-        
+
     arr = []
     last = None
     buf = io.StringIO(src)
-    s = buf.readline()
-    while s:
-        parseLine(s)
-        s = buf.readline()
+    line = buf.readline()
+    while line:
+        parseLine(line)
+        line = buf.readline()
     return arr
+
 
 def parseText(pats, text):
     def parseLine(line):
@@ -182,21 +177,31 @@ def parseText(pats, text):
         allSet = set([x for x in range(len(words))])
         used = set()
         was = False
+        # print(used)
         for p in pats:
             usedP = set()
             while True:
                 res = p.checkPhrase(words, usedP)
                 if res:
+                    # print(res)
                     (res, newP) = res
+                    # if newP < usedP:
+                    #    break
                     used = used.union(newP)
+                    # print(words,usedP,newP)
                     first = list(newP)[0]
-                    usedP = set([ x for x in range(first+1)])
-                    print('+',line, p.tags, [r[0] for r in res])
+                    usedP = set([x for x in range(first + 1)])
+                    print('+', line, p.tags, [r[0] for r in res])
                     was = True
                 else:
                     break
         if not was:
-            print('-',line)
+            print('-', line)
+            for word in line.split():
+                print(" ", word + ':')
+                for v in morph.parse(word):
+                    print("   ", ','.join([g for g in v.tag.grammemes]))
+            # break
 
     buf = io.StringIO(text)
     s = buf.readline()
@@ -206,9 +211,10 @@ def parseText(pats, text):
             parseLine(s)
         s = buf.readline()
 
-def tags(word):
-    morph = py.MorphAnalyzer()
-    return morph.parse(word)
 
-patterns = parseSource(source)
-parseText(patterns, text)
+if __name__ == "__main__":
+    patterns = parseSource(source)
+    print("Положительные примеры")
+    parseText(patterns, text)
+    print("Отрицательные примеры")
+    parseText(patterns, notext)
